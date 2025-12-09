@@ -4,4 +4,6 @@ version = "0.1.0"
 description = "My First Python Project"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "cowsay>=6.1",
+]
