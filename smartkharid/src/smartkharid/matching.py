@@ -21,10 +21,13 @@ _UNIT_ALIASES = {"watt": "w", "watts": "w", "inches": "inch", "litre": "l", "lit
 VARIANT_WORDS = {"pro", "max", "plus", "ultra", "mini", "lite"}
 
 # Words that indicate an accessory *for* the product rather than the product.
-ACCESSORY_WORDS = set(
-    "case cases cover covers tempered glass protector guard skin skins charger cable adapter "
-    "strap stand holder pouch sticker film sleeve replacement earpads cushions".split()
-)
+# fmt: off
+ACCESSORY_WORDS = {
+    "case", "cases", "cover", "covers", "tempered", "glass", "protector", "guard", "skin", "skins",
+    "charger", "cable", "adapter", "strap", "stand", "holder", "pouch", "sticker", "film", "sleeve",
+    "replacement", "earpads", "cushions",
+}
+# fmt: on
 _ACCESSORY_LINKS = {"for", "compatible"}
 
 MIN_RELEVANCE = 0.7

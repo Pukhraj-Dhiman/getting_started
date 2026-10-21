@@ -95,11 +95,15 @@ SDK for APKs), so it takes a while.
 | Linux | `uv run flet build linux` | Linux | `build/linux/` |
 | Web | `uv run flet build web` | any | `build/web/` (static site) |
 
-**No Mac or Windows machine?** The GitHub Actions workflow
-[`.github/workflows/smartkharid.yml`](../.github/workflows/smartkharid.yml) builds the Android,
-Windows, macOS and web versions in the cloud. Go to **Actions → SmartKharid → Run workflow**
-and download the results from the run's *Artifacts*. iOS needs your Apple signing certificate,
-so build it on a Mac (see the [Flet iOS docs](https://flet.dev/docs/publish/ios)).
+**Android APK without installing anything:** every push builds the APK on GitHub Actions
+([`.github/workflows/smartkharid.yml`](../.github/workflows/smartkharid.yml)) and publishes it as the
+**`smartkharid-apk` pre-release** on the repo's Releases page. On your phone, open the release, tap
+`smartkharid.apk`, allow "Install unknown apps" for your browser, and install. Builds are signed with a
+debug key that is kept between runs, so a newer APK installs over the old one.
+
+**Windows / macOS / web:** once the workflow file is on the default branch, **Actions → SmartKharid →
+Run workflow** builds those too; download them from the run's *Artifacts*. iOS needs your Apple signing
+certificate, so build it on a Mac (see the [Flet iOS docs](https://flet.dev/docs/publish/ios)).
 
 ## Project structure
 

@@ -30,7 +30,7 @@ BADGE_COLORS = {
     BADGE_CHEAPEST: ft.Colors.BLUE_700,
     BADGE_TOP_RATED: ft.Colors.AMBER_800,
     BADGE_FASTEST: ft.Colors.PURPLE_600,
-    BADGE_OUT_OF_STOCK: ft.Colors.RED_700,
+    BADGE_OUT_OF_STOCK: ft.Colors.ERROR,  # theme-aware, stays readable in dark mode
 }
 CRITERIA = [
     ("price", "Price", ft.Icons.CURRENCY_RUPEE),
@@ -61,7 +61,7 @@ def _rating(s: ScoredOffer) -> ft.Control:
             ft.Text(f"({format_count(o.review_count)} reviews)", size=13, color=ft.Colors.ON_SURFACE_VARIANT),
         ],
         spacing=3,
-        tight=True,
+        wrap=True,
     )
 
 
@@ -129,7 +129,8 @@ class SmartKharidApp:
             prefix_icon=ft.Icons.SEARCH,
             border_radius=12,
             expand=True,
-            autofocus=True,
+            # On phones an autofocused field pops the keyboard over the screen at launch.
+            autofocus=page.platform not in (ft.PagePlatform.ANDROID, ft.PagePlatform.IOS),
             on_submit=self.on_search,
         )
         self.search_button = ft.FilledButton(
@@ -142,7 +143,6 @@ class SmartKharidApp:
                 max=10,
                 divisions=10,
                 label="{value}",
-                expand=True,
                 on_change_end=self.on_weights_change,
             )
             for key, _, _ in CRITERIA
@@ -198,10 +198,11 @@ class SmartKharidApp:
             spacing=8,
             run_spacing=8,
         )
+        # Label above a full-width slider, so the slider is wide enough to drag on a phone.
         rows = [
-            ft.Row(
-                [ft.Icon(icon, size=20), ft.Text(label, width=130), self.sliders[key]],
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ft.Column(
+                [ft.Row([ft.Icon(icon, size=20), ft.Text(label)], spacing=8), self.sliders[key]],
+                spacing=0,
             )
             for key, label, icon in CRITERIA
         ]
@@ -294,6 +295,8 @@ class SmartKharidApp:
 
         self.page.show_dialog(
             ft.AlertDialog(
+                scrollable=True,  # the keyboard leaves little room on phones
+                inset_padding=ft.Padding.symmetric(horizontal=16, vertical=24),
                 title=ft.Text("Settings"),
                 content=ft.Column(
                     [
@@ -332,13 +335,15 @@ class SmartKharidApp:
     async def on_weights_change(self, e):
         self.weights = Weights(**{key: float(self.sliders[key].value) for key, _, _ in CRITERIA})
         self.sync_sliders()
-        self.render()
+        if not self.loading:  # a running search renders with the new weights when it finishes
+            self.render()
         await self.save_weights()
 
     async def on_preset(self, e):
         self.weights = PRESETS[e.control.data]
         self.sync_sliders()
-        self.render()
+        if not self.loading:
+            self.render()
         await self.save_weights()
 
     # ---------- search ----------
@@ -356,6 +361,7 @@ class SmartKharidApp:
 
     async def run_search(self):
         self.loading = True
+        self.search_field.disabled = True  # drops focus, which hides the phone keyboard
         self.search_button.disabled = True
         self.results.controls = [
             ft.Container(
@@ -373,6 +379,7 @@ class SmartKharidApp:
             self.offers, self.errors = fetched.offers, fetched.errors
         finally:
             self.loading = False
+            self.search_field.disabled = False
             self.search_button.disabled = False
         self.render()
         self.page.update()
@@ -542,7 +549,14 @@ class SmartKharidApp:
                 ft.Row(
                     [
                         ft.Text(f"#{rank}", size=13, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ft.Text(o.store, size=17, weight=ft.FontWeight.BOLD),
+                        ft.Text(
+                            o.store,
+                            size=17,
+                            weight=ft.FontWeight.BOLD,
+                            expand=True,
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ),
                     ],
                     spacing=6,
                 ),
@@ -557,7 +571,6 @@ class SmartKharidApp:
             [
                 _price_block(s, 18),
                 ft.Text(f"Score {s.score:.0f}", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
-                ft.OutlinedButton("Open", icon=ft.Icons.OPEN_IN_NEW, url=o.url, disabled=not o.url),
             ],
             spacing=6,
             horizontal_alignment=ft.CrossAxisAlignment.END,
@@ -568,13 +581,21 @@ class SmartKharidApp:
                     [
                         ft.Row([left, right], vertical_alignment=ft.CrossAxisAlignment.START),
                         ft.ProgressBar(value=s.score / 100, bar_height=6, border_radius=3),
-                        _breakdown(s),
+                        ft.Row(
+                            [
+                                ft.Container(_breakdown(s), expand=True),
+                                ft.OutlinedButton(
+                                    "Open store", icon=ft.Icons.OPEN_IN_NEW, url=o.url, disabled=not o.url
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
                     ],
                     spacing=8,
                 ),
                 padding=14,
             ),
-            opacity=1.0 if o.in_stock else 0.55,
+            opacity=1.0 if o.in_stock else 0.7,
         )
 
 
