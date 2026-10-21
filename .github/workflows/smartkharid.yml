@@ -1,0 +1,45 @@
+name: SmartKharid
+
+on:
+  push:
+    paths: ["smartkharid/**", ".github/workflows/smartkharid.yml"]
+  pull_request:
+    paths: ["smartkharid/**", ".github/workflows/smartkharid.yml"]
+  # Actions tab -> SmartKharid -> "Run workflow" builds the installable apps.
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: smartkharid
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run pytest -q
+
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: apk, os: ubuntu-latest }
+          - { target: windows, os: windows-latest }
+          - { target: macos, os: macos-latest }
+          - { target: web, os: ubuntu-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      # --yes lets Flet install the Flutter SDK (and Android SDK/JDK for apk) it needs.
+      - run: uv run flet build ${{ matrix.target }} --yes --no-rich-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smartkharid-${{ matrix.target }}
+          path: smartkharid/build/${{ matrix.target }}

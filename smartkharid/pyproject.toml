@@ -1,0 +1,43 @@
+[project]
+name = "smartkharid"
+version = "0.1.0"
+description = "Compare a product's price, reviews and delivery across online stores and get told where to buy it."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Pukhraj Dhiman" }
+]
+dependencies = [
+    "flet==1.0.5",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "flet-cli==1.0.5",
+    "flet-desktop==1.0.5",
+    "flet-web==1.0.5",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.flet]
+org = "com.smartkharid"
+product = "SmartKharid"
+company = "SmartKharid"
+copyright = "Copyright (C) 2026 Pukhraj Dhiman"
+icon_background = "#00796B"
+
+[tool.flet.app]
+path = "src"
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint.per-file-ignores]
+"src/smartkharid/sources/demo.py" = ["E501"]  # one catalog row per line reads best
