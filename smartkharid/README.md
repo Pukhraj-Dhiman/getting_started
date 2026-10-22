@@ -104,8 +104,11 @@ SDK for APKs), so it takes a while.
 **Android APK without installing anything:** every push builds the APK on GitHub Actions
 ([`.github/workflows/smartkharid.yml`](../.github/workflows/smartkharid.yml)) and publishes it as the
 **`smartkharid-apk` pre-release** on the repo's Releases page. On your phone, open the release, tap
-`smartkharid.apk`, allow "Install unknown apps" for your browser, and install. Builds are signed with a
-debug key that is kept between runs, so a newer APK installs over the old one.
+`smartkharid.apk`, allow "Install unknown apps" for your browser, and install. Every build is signed
+with the same test key (created on the first run and kept in the Actions cache), so a newer APK
+installs over the old one. The cache is dropped after 7 days without builds; for a key that never
+changes, add your own keystore as the repository secrets `ANDROID_KEYSTORE_B64` (base64 of the
+`.jks` file, key alias `upload`) and `ANDROID_KEYSTORE_PASSWORD`.
 
 **Windows / macOS / web:** once the workflow file is on the default branch, **Actions → SmartKharid →
 Run workflow** builds those too; download them from the run's *Artifacts*. iOS needs your Apple signing

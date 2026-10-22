@@ -38,11 +38,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      # Same debug signing key on every run, so a newer test APK installs over the old one.
+      # Sign every build with the same key, so a newer test APK installs over the old one.
+      # Uses the ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD repository secrets when set
+      # (key alias "upload"); otherwise a test key created on the first run and kept in the cache.
       - uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          path: ~/.smartkharid-signing
+          key: smartkharid-signing-v1
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          KS="$HOME/.smartkharid-signing/upload.jks"
+          PASS="${KEYSTORE_PASSWORD:-smartkharid-test}"
+          if [ -n "$KEYSTORE_B64" ]; then
+            KS="$RUNNER_TEMP/upload.jks"
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+          elif [ ! -f "$KS" ]; then
+            mkdir -p "$(dirname "$KS")"
+            keytool -genkeypair -keystore "$KS" -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=SmartKharid Test, O=SmartKharid, C=IN"
+          fi
+          echo "::add-mask::$PASS"
+          {
+            echo "FLET_ANDROID_SIGNING_KEY_STORE=$KS"
+            echo "FLET_ANDROID_SIGNING_KEY_ALIAS=upload"
+            echo "FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD=$PASS"
+          } >> "$GITHUB_ENV"
+          keytool -list -v -keystore "$KS" -storepass "$PASS" | grep -m1 "SHA256:"
       - run: uv sync
       # --yes lets Flet install the Flutter SDK, JDK 17 and Android SDK packages it needs.
       - run: uv run flet build apk --yes --no-rich-output -v --build-number ${{ github.run_number }}
