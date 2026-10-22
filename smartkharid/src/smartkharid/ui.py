@@ -7,7 +7,7 @@ import os
 import flet as ft
 
 from .formatting import format_count, format_money
-from .models import PRESETS, Comparison, ScoredOffer, Weights
+from .models import PRESETS, Comparison, ProductDetails, Review, ScoredOffer, Weights
 from .scoring import (
     BADGE_CHEAPEST,
     BADGE_FASTEST,
@@ -15,7 +15,7 @@ from .scoring import (
     BADGE_RECOMMENDED,
     BADGE_TOP_RATED,
 )
-from .service import compare, fetch_offers
+from .service import compare, fetch_details, fetch_offers
 from .sources import DemoSource, SerpApiShoppingSource, Source
 from .sources.demo import SUGGESTIONS
 
@@ -108,6 +108,71 @@ def _breakdown(s: ScoredOffer) -> ft.Control:
     )
 
 
+def _stars(rating: float | None, size: int = 14) -> ft.Control:
+    rating = rating or 0
+    icons = []
+    for i in range(1, 6):
+        if rating >= i - 0.25:
+            icon = ft.Icons.STAR_ROUNDED
+        elif rating >= i - 0.75:
+            icon = ft.Icons.STAR_HALF_ROUNDED
+        else:
+            icon = ft.Icons.STAR_BORDER_ROUNDED
+        icons.append(ft.Icon(icon, size=size, color=ft.Colors.AMBER_700))
+    return ft.Row(icons, spacing=0, tight=True)
+
+
+def _muted(text: str, size: int = 12, **kwargs) -> ft.Text:
+    return ft.Text(text, size=size, color=ft.Colors.ON_SURFACE_VARIANT, **kwargs)
+
+
+def _image(url: str | None, size: int) -> ft.Control:
+    placeholder = ft.Icon(ft.Icons.INVENTORY_2_OUTLINED, size=size // 2, color=ft.Colors.ON_SURFACE_VARIANT)
+    content = (
+        ft.Image(src=url, fit=ft.BoxFit.CONTAIN, width=size, height=size, error_content=placeholder)
+        if url
+        else placeholder
+    )
+    return ft.Container(
+        content,
+        width=size,
+        height=size,
+        bgcolor=ft.Colors.WHITE if url else ft.Colors.SURFACE_CONTAINER_HIGHEST,
+        border_radius=12,
+        alignment=ft.Alignment.CENTER,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+    )
+
+
+def _section(title: str, icon, controls: list[ft.Control]) -> ft.Control:
+    return ft.ExpansionTile(
+        title=ft.Text(title, weight=ft.FontWeight.W_600, size=15),
+        leading=ft.Icon(icon, size=20),
+        tile_padding=ft.Padding.symmetric(horizontal=4),
+        controls_padding=ft.Padding.only(left=4, right=4, bottom=8),
+        expanded_cross_axis_alignment=ft.CrossAxisAlignment.START,
+        controls=controls,
+    )
+
+
+def _review(r: Review) -> ft.Control:
+    meta = " · ".join(x for x in (r.author, r.source, r.date) if x)
+    lines: list[ft.Control] = []
+    if r.rating is not None:
+        lines.append(_stars(r.rating, 13))
+    if r.title:
+        lines.append(ft.Text(r.title, weight=ft.FontWeight.W_600, size=13))
+    lines.append(ft.Text(r.text, size=13))
+    if meta:
+        lines.append(_muted(meta, 11))
+    return ft.Container(
+        ft.Column(lines, spacing=4),
+        padding=10,
+        border_radius=10,
+        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+    )
+
+
 class SmartKharidApp:
     def __init__(self, page: ft.Page):
         self.page = page
@@ -118,10 +183,15 @@ class SmartKharidApp:
         self.country = "in"
         self.weights = PRESETS["Balanced"]
 
+        self.full_details = True  # live mode: one extra SerpApi search for specs, reviews, photos
+
         self.query = ""
         self.offers = []
         self.errors: dict[str, str] = {}
         self.loading = False
+        self.search_seq = 0  # ignores product details that arrive after a newer search started
+        self.details: ProductDetails | None = None
+        self.details_loading = False
 
         self.search_field = ft.TextField(
             hint_text="e.g. iPhone 15 128GB",
@@ -225,6 +295,9 @@ class SmartKharidApp:
         self.source_mode = await p.get(PREF + "source") or self.source_mode
         self.serpapi_key = await p.get(PREF + "serpapi_key") or self.serpapi_key
         self.country = await p.get(PREF + "country") or self.country
+        full = await p.get(PREF + "full_details")
+        if isinstance(full, bool):
+            self.full_details = full
         saved = await p.get(PREF + "weights")
         if isinstance(saved, str):
             try:
@@ -237,6 +310,7 @@ class SmartKharidApp:
         await p.set(PREF + "source", self.source_mode)
         await p.set(PREF + "serpapi_key", self.serpapi_key)
         await p.set(PREF + "country", self.country)
+        await p.set(PREF + "full_details", self.full_details)
         await self.save_weights()
 
     async def save_weights(self):
@@ -255,7 +329,9 @@ class SmartKharidApp:
 
     def build_sources(self) -> list[Source]:
         if self.source_mode == SOURCE_SERPAPI:
-            return [SerpApiShoppingSource(self.serpapi_key, country=self.country)]
+            return [
+                SerpApiShoppingSource(self.serpapi_key, country=self.country, full_details=self.full_details)
+            ]
         return [DemoSource()]
 
     def open_settings(self, e):
@@ -280,11 +356,13 @@ class SmartKharidApp:
             expand=True,
             options=[ft.DropdownOption(key=k, text=v) for k, v in COUNTRIES.items()],
         )
+        full_details = ft.Switch(label="Full product details (live mode)", value=self.full_details)
 
         async def save(_):
             self.source_mode = source.value or SOURCE_DEMO
             self.serpapi_key = (key.value or "").strip()
             self.country = country.value or "in"
+            self.full_details = bool(full_details.value)
             await self.save_settings()
             self.page.pop_dialog()
             self.update_source_label()
@@ -303,9 +381,12 @@ class SmartKharidApp:
                         ft.Row([source]),
                         key,
                         ft.Row([country]),
+                        full_details,
                         ft.Text(
                             "Live mode compares prices, ratings and reviews from Amazon, Flipkart, "
                             "Croma and hundreds of other stores listed on Google Shopping. "
+                            "Full product details (photos, description, specifications, reviews) "
+                            "use one more SerpApi search per product. "
                             "Get a free API key at serpapi.com. The key is stored only on this device.",
                             size=12,
                             color=ft.Colors.ON_SURFACE_VARIANT,
@@ -360,6 +441,9 @@ class SmartKharidApp:
         await self.on_search()
 
     async def run_search(self):
+        self.search_seq += 1
+        seq = self.search_seq
+        self.details, self.details_loading = None, False
         self.loading = True
         self.search_field.disabled = True  # drops focus, which hides the phone keyboard
         self.search_button.disabled = True
@@ -374,13 +458,27 @@ class SmartKharidApp:
             )
         ]
         self.page.update()
+        sources = self.build_sources()
         try:
-            fetched = await fetch_offers(self.query, self.build_sources())
+            fetched = await fetch_offers(self.query, sources)
             self.offers, self.errors = fetched.offers, fetched.errors
         finally:
             self.loading = False
             self.search_field.disabled = False
             self.search_button.disabled = False
+        comparison = compare(self.query, self.offers, self.weights, self.errors)
+        self.details_loading = bool(comparison.ranked)
+        self.render()  # prices first; the product details follow when they arrive
+        self.page.update()
+        if not comparison.ranked:
+            return
+        details, error = await fetch_details(self.query, comparison, sources)
+        if seq != self.search_seq:
+            return
+        self.details_loading = False
+        self.details = details
+        if error and details is None:
+            self.errors = {**self.errors, "Product details": error}
         self.render()
         self.page.update()
 
@@ -396,6 +494,8 @@ class SmartKharidApp:
             if not comparison.errors:  # with errors, the banner already says what went wrong
                 controls.append(self.empty_state())
         else:
+            if self.details_loading or self.details:
+                controls.append(self.product_card())
             if comparison.recommended:
                 controls.append(self.recommendation_card(comparison))
             controls.append(self.summary_line(comparison))
@@ -430,6 +530,7 @@ class SmartKharidApp:
                 ft.Icons.STOREFRONT_OUTLINED,
                 "SmartKharid checks its price, reviews and delivery on every store.",
             ),
+            (ft.Icons.LIST_ALT, "You also see the product's photos, specifications, highlights and reviews."),
             (ft.Icons.THUMB_UP_OUTLINED, "You get the best store for you, with the reasons."),
         ]
         return ft.Column(
@@ -485,6 +586,121 @@ class SmartKharidApp:
             plural = "s" if c.filtered_out != 1 else ""
             text += f" · ignored {c.filtered_out} unrelated listing{plural} (accessories, other variants)"
         return ft.Text(text, size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+
+    def product_card(self) -> ft.Control:
+        d = self.details
+        if d is None:
+            loading = ft.Row(
+                [
+                    ft.ProgressRing(width=18, height=18, stroke_width=2),
+                    _muted("Loading product details…", 13),
+                ],
+                spacing=10,
+            )
+            return ft.Card(ft.Container(loading, padding=16))
+
+        info: list[ft.Control] = [
+            ft.Text(
+                d.title, size=17, weight=ft.FontWeight.BOLD, max_lines=3, overflow=ft.TextOverflow.ELLIPSIS
+            )
+        ]
+        if d.brand:
+            info.append(_muted(f"Brand: {d.brand}", 13))
+        if d.rating is not None:
+            rating: list[ft.Control] = [
+                ft.Text(f"{d.rating:.1f}", size=14, weight=ft.FontWeight.BOLD),
+                _stars(d.rating),
+            ]
+            if d.review_count:
+                rating.append(_muted(f"({format_count(d.review_count)})", 13))
+            info.append(ft.Row(rating, spacing=4, wrap=True))
+        if d.price_range:
+            info.append(ft.Text(d.price_range, size=14, weight=ft.FontWeight.W_600))
+
+        controls: list[ft.Control] = [
+            ft.Row(
+                [_image(d.images[0] if d.images else None, 104), ft.Column(info, spacing=4, expand=True)],
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                spacing=14,
+            )
+        ]
+        if d.highlights:
+            controls.append(
+                ft.Column(
+                    [
+                        ft.Row(
+                            [
+                                ft.Icon(ft.Icons.CHECK, size=16, color=ft.Colors.PRIMARY),
+                                ft.Text(h, size=13, expand=True),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                            spacing=6,
+                        )
+                        for h in d.highlights[:5]
+                    ],
+                    spacing=4,
+                )
+            )
+
+        sections: list[ft.Control] = []
+        if len(d.images) > 1:
+            photos = ft.Row([_image(url, 140) for url in d.images], scroll=ft.ScrollMode.AUTO, spacing=8)
+            sections.append(_section(f"Photos ({len(d.images)})", ft.Icons.PHOTO_LIBRARY_OUTLINED, [photos]))
+        if d.description:
+            text = ft.Text(d.description, size=13, selectable=True)
+            sections.append(_section("Description", ft.Icons.DESCRIPTION_OUTLINED, [text]))
+        if len(d.highlights) > 5:
+            bullets = [ft.Text("• " + h, size=13) for h in d.highlights]
+            sections.append(_section("All highlights", ft.Icons.CHECKLIST, bullets))
+        if d.specs:
+            rows: list[ft.Control] = []
+            for spec in d.specs:
+                if spec.title:
+                    heading = ft.Text(spec.title, weight=ft.FontWeight.BOLD, size=13)
+                    rows.append(ft.Container(heading, padding=ft.Padding.only(top=6)))
+                rows += [
+                    ft.Row(
+                        [_muted(name, 13, expand=2), ft.Text(value, size=13, expand=3, selectable=True)],
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    )
+                    for name, value in spec.rows
+                ]
+            sections.append(_section("Specifications", ft.Icons.LIST_ALT, [ft.Column(rows, spacing=6)]))
+        if d.rating_breakdown or d.reviews:
+            parts: list[ft.Control] = []
+            total = sum(n for _, n in d.rating_breakdown)
+            for stars, n in d.rating_breakdown:
+                bar = ft.ProgressBar(
+                    value=n / total if total else 0, expand=True, bar_height=8, border_radius=4
+                )
+                count = _muted(format_count(n), 12, width=64, text_align=ft.TextAlign.RIGHT)
+                parts.append(
+                    ft.Row(
+                        [
+                            ft.Row(
+                                [
+                                    ft.Text(str(stars), size=12),
+                                    ft.Icon(ft.Icons.STAR_ROUNDED, size=12, color=ft.Colors.AMBER_700),
+                                ],
+                                spacing=1,
+                                width=30,
+                            ),
+                            bar,
+                            count,
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    )
+                )
+            parts += [_review(r) for r in d.reviews]
+            title = "Ratings & reviews" if d.reviews else "Ratings"
+            sections.append(_section(title, ft.Icons.RATE_REVIEW_OUTLINED, [ft.Column(parts, spacing=8)]))
+        if sections:
+            controls.append(ft.Column(sections, spacing=0))
+
+        footer = " ".join(x for x in (f"Details: {d.source}." if d.source else "", d.note) if x)
+        if footer:
+            controls.append(_muted(footer, 11, italic=True))
+        return ft.Card(ft.Container(ft.Column(controls, spacing=10), padding=16))
 
     def recommendation_card(self, c: Comparison) -> ft.Control:
         s = c.recommended

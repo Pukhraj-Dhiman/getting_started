@@ -19,6 +19,11 @@ class Source(Protocol):
         """Return every listing the source finds for `query` (unfiltered)."""
         ...
 
+    # Optional: sources may also provide
+    #   async def details(self, query: str, offers: list[Offer]) -> ProductDetails | None
+    # describing the product behind `offers` (ranked best first; only the source's own offers
+    # are relevant to it). Return None when it has nothing to say about these offers.
+
 
 # Search pages of popular Indian stores, used to send the buyer to the product.
 _STORE_SEARCH = {

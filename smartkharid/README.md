@@ -27,6 +27,8 @@ One Python codebase runs on **Android, iOS, Windows, macOS** (plus Linux and web
   delivery (5 days) and a lower store rating."*
 - **Your priorities**: sliders for Price / Reviews / Delivery / Store trust, plus presets
   (Balanced, Lowest price, Best quality, Fast delivery). Results re-rank instantly.
+- **Full product details** next to the prices: photos, brand, description, key highlights,
+  specifications, rating breakdown and customer reviews.
 - **Buy button** opens the store page directly.
 - Works **offline in demo mode**, or with **live prices** from Google Shopping (covers Amazon,
   Flipkart, Croma, Tata CLiQ and hundreds more).
@@ -74,6 +76,10 @@ For real prices of any product:
 2. In the app, open **Settings** (gear icon), choose **Live (Google Shopping)**, paste the key, and pick
    your country.
 
+Each **Compare** uses 1 SerpApi search for the prices, plus 1 more for the full product details
+(photos, description, specifications, reviews). To save searches, turn off **Full product details**
+in Settings; the app then shows only the details found in the store listings.
+
 The key is stored only on your device. On desktop you can also set the `SERPAPI_KEY` environment
 variable.
 
@@ -118,11 +124,13 @@ smartkharid/
 │       ├── service.py        # fetch from all sources in parallel → filter → rank
 │       ├── matching.py       # is this listing the same product? (variants, accessories)
 │       ├── scoring.py        # scores, badges and the "why" explanation
-│       ├── models.py         # Offer, Weights, Comparison
+│       ├── details.py        # product details built from listings, merging detail sources
+│       ├── models.py         # Offer, ProductDetails, Weights, Comparison
 │       ├── formatting.py     # ₹1,23,456 style prices
 │       └── sources/
 │           ├── demo.py       # offline sample catalog
-│           └── serpapi.py    # live Google Shopping prices
+│           ├── demo_details.py  # sample specs, highlights and reviews for the demo products
+│           └── serpapi.py    # live Google Shopping prices and product details
 └── tests/                    # pytest suite
 ```
 
@@ -139,12 +147,18 @@ class MyStoreSource:
         ...  # call the API, return Offer(store=..., title=..., price=..., url=..., rating=..., review_count=...)
 ```
 
+A source can also provide product details with an optional
+`async details(query, offers) -> ProductDetails | None` method (see `sources/demo.py`).
+
 Add it to `build_sources()` in `ui.py`. All sources are queried in parallel; if one fails, the
 others still show results with a warning.
 
 ## Limitations
 
-- Demo prices are illustrative, not real.
+- Demo prices, details and reviews are illustrative sample data, not real.
+- Live product details come from SerpApi's Google Immersive Product API, whose response layout is only
+  partly documented. The parser accepts several layouts and falls back to the listing's own details,
+  but it has not yet been checked against a real response.
 - Live data is only as good as Google Shopping's listing: its rating is often the product's overall
   rating rather than the store's own, and delivery time is not always given.
 - Product matching uses text rules, so a strangely titled listing can be dropped or kept by mistake.

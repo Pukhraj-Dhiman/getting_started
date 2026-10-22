@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from .matching import filter_matching
-from .models import Comparison, Offer, Weights
+from .models import Comparison, Offer, ProductDetails, Weights
 from .scoring import explain, score_offers
 from .sources import Source
 
@@ -58,3 +58,31 @@ def compare(
         errors=dict(errors or {}),
         filtered_out=dropped,
     )
+
+
+async def fetch_details(
+    query: str, comparison: Comparison, sources: list[Source], timeout: float = 30.0
+) -> tuple[ProductDetails | None, str | None]:
+    """Details of the compared product, from the first source that has them.
+
+    Returns (details, error message). The recommended offer comes first, so the details
+    describe the listing the buyer is told to buy.
+    """
+    offers = [s.offer for s in comparison.ranked]
+    if not offers:
+        return None, None
+    error = None
+    for source in sources:
+        details = getattr(source, "details", None)
+        if details is None:
+            continue
+        try:
+            found = await asyncio.wait_for(details(query, offers), timeout)
+        except asyncio.TimeoutError:
+            error = f"{source.name}: no product details within {timeout:.0f} seconds."
+        except Exception as e:  # noqa: BLE001 -- a details failure must never hide the prices
+            error = f"{source.name}: {e or type(e).__name__}"
+        else:
+            if found is not None:
+                return found, None
+    return None, error

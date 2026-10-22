@@ -9,10 +9,13 @@ so the matching filter has something to do.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
+from ..details import basic_details, merge
 from ..matching import relevance
-from ..models import Offer
+from ..models import Offer, ProductDetails
 from .base import store_search_url
+from .demo_details import DETAILS, STAR_SHARE
 
 # (store, title, price, shipping, rating, reviews, delivery_days, store_rating, in_stock)
 _Row = tuple[str, str, float, float, float | None, int, int | None, float | None, bool]
@@ -75,6 +78,7 @@ CATALOG: dict[str, list[_Row]] = {
 # fmt: on
 
 SUGGESTIONS = list(CATALOG)
+_PRODUCT_OF_TITLE = {row[1]: product for product, rows in CATALOG.items() for row in rows}
 
 MIN_SEARCH_RELEVANCE = 0.5
 
@@ -106,3 +110,22 @@ class DemoSource:
             for store, title, price, shipping, rating, reviews, days, store_rating, in_stock in rows
             if relevance(query, title) >= MIN_SEARCH_RELEVANCE
         ]
+
+    async def details(self, query: str, offers: list[Offer]) -> ProductDetails | None:
+        """Sample details of the catalog product behind the best-ranked demo offer."""
+        product = next(
+            (
+                _PRODUCT_OF_TITLE[o.title]
+                for o in offers
+                if o.source == "demo" and o.title in _PRODUCT_OF_TITLE
+            ),
+            None,
+        )
+        if product not in DETAILS:
+            return None
+        same = [o for o in offers if _PRODUCT_OF_TITLE.get(o.title) == product]
+        details = merge(DETAILS[product], basic_details(same, self.name))
+        if details.review_count and product in STAR_SHARE:
+            counts = (round(details.review_count * share / 100) for share in STAR_SHARE[product])
+            details = replace(details, rating_breakdown=tuple(zip((5, 4, 3, 2, 1), counts, strict=True)))
+        return details

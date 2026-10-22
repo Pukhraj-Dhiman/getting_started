@@ -22,11 +22,48 @@ class Offer:
     in_stock: bool = True
     source: str = ""  # name of the data source that produced this offer
     image_url: str | None = None
+    highlights: tuple[str, ...] = ()  # short facts from the listing, e.g. "128 GB", "5G"
+    details_token: str | None = None  # source-specific handle to fetch full product details
 
     @property
     def total_price(self) -> float:
         """What the buyer actually pays: item price plus shipping."""
         return self.price + self.shipping
+
+
+@dataclass(frozen=True)
+class Review:
+    text: str
+    rating: float | None = None
+    title: str = ""
+    author: str = ""
+    date: str = ""
+    source: str = ""  # where the review was posted, e.g. a store name
+
+
+@dataclass(frozen=True)
+class SpecSection:
+    title: str  # empty when the specs are not grouped
+    rows: tuple[tuple[str, str], ...]  # (name, value)
+
+
+@dataclass(frozen=True)
+class ProductDetails:
+    """Everything known about the product itself, independent of the store."""
+
+    title: str
+    brand: str = ""
+    description: str = ""
+    images: tuple[str, ...] = ()
+    highlights: tuple[str, ...] = ()
+    specs: tuple[SpecSection, ...] = ()
+    rating: float | None = None
+    review_count: int = 0
+    rating_breakdown: tuple[tuple[int, int], ...] = ()  # (stars, number of ratings), 5 stars first
+    reviews: tuple[Review, ...] = ()
+    price_range: str = ""
+    source: str = ""  # who provided the details
+    note: str = ""  # e.g. why only basic details are shown
 
 
 @dataclass(frozen=True)
